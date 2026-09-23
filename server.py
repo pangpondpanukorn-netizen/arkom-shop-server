@@ -1,7 +1,7 @@
 """
 ===================================================================
  🔮 ARKOM SHOP - CLOUD SERVER API (RENDER BACKEND) 🔮
- ระบบหลังบ้านตรวจสอบสิทธิ์ พร้อมระบบ Log ภาษาไทยอ่านง่าย
+ ระบบหลังบ้านตรวจสอบสิทธิ์ + ระบบเก็บข้อมูลคีย์ + Log ภาษาไทย
 ===================================================================
 """
 
@@ -10,6 +10,9 @@ import os
 from flask import Flask, jsonify, request
 
 app = Flask(__name__)
+
+# 📌 ตัวแปรเก็บฐานข้อมูลคีย์จำลองบนเซิร์ฟเวอร์ (หน่วยความจำแรม)
+db_storage = {}
 
 # ---------------- ฟังก์ชันระบบ Log แบบอ่านง่าย ----------------
 def server_log(action, status, detail=""):
@@ -34,51 +37,71 @@ def validate_license():
     discord_id = data.get("discord_id", "").strip()
     client_ip = request.remote_addr
 
-    # 📌 จุดเชื่อมต่อฐานข้อมูล (Database Validation)
-    # สามารถเขียนโค้ดเชื่อมต่อฐานข้อมูลจริงของคุณตรงนี้ได้เลย
-    # ตัวอย่างจำลอง: กำหนดให้คีย์ผ่านเสมอหากกรอกข้อมูลมา
-    is_key_valid = True  
-    
-    if is_key_valid:
-        # บันทึก Log เมื่อตรวจสอบสิทธิ์ผ่าน
+    # ตรวจสอบว่ามีคีย์นี้อยู่ในฐานข้อมูลหรือไม่
+    if user_key in db_storage:
+        key_info = db_storage[user_key]
+        
+        # อัปเดตสถานะเป็น ACTIVE และบันทึก HWID/Discord หากยังไม่เคยใช้
+        if key_info.get("status") == "UNUSED":
+            key_info["status"] = "ACTIVE"
+            key_info["hwid"] = hwid
+            key_info["discord_id"] = discord_id
+
         server_log(
             action="🔑 ตรวจสอบสิทธิ์ (VALIDATE)", 
             status="✅ สำเร็จ (200)", 
-            detail=f"Discord ID: {discord_id} | HWID: {hwid[:10]}... | IP: {client_ip}"
+            detail=f"Key: {user_key[:6]}... | Discord: {discord_id} | HWID: {hwid[:10]}..."
         )
         return jsonify({
             "success": True, 
             "message": "ยืนยันตัวตนสำเร็จ กำลังเข้าสู่ระบบ..."
         }), 200
     else:
-        # บันทึก Log เมื่อคีย์ไม่ถูกต้องหรือถูกปฏิเสธ
         server_log(
             action="🔑 ตรวจสอบสิทธิ์ (VALIDATE)", 
             status="❌ ปฏิเสธการเข้าถึง (401)", 
-            detail=f"Key: {user_key[:6]}... | Discord ID: {discord_id} | IP: {client_ip}"
+            detail=f"ไม่พบคีย์ในระบบ: {user_key[:6]}... | IP: {client_ip}"
         )
         return jsonify({
             "success": False, 
-            "message": "License Key ไม่ถูกต้องหรือหมดอายุ"
+            "message": "License Key ไม่ถูกต้องหรือไม่มีในระบบ"
         }), 400
 
-# ---------------- API เรียกข้อมูลฐานข้อมูลระบบ ----------------
+# ---------------- API จัดการฐานข้อมูลคีย์ (เชื่อมต่อกับ Admin Panel) ----------------
 @app.route('/api/db', methods=['GET', 'POST'])
 def database_connection():
+    global db_storage
     client_ip = request.remote_addr
-    server_log(
-        action="🗄️ เรียกข้อมูลฐานข้อมูล (DATABASE)", 
-        status="✅ สำเร็จ (200)", 
-        detail=f"Request จาก IP: {client_ip}"
-    )
-    return jsonify({
-        "status": "connected", 
-        "message": "Database ready & synchronized"
-    }), 200
+
+    if request.method == 'POST':
+        # รับข้อมูลฐานข้อมูลคีย์ใหม่จาก Admin Panel มาบันทึก
+        new_db = request.json
+        if isinstance(new_db, dict):
+            db_storage = new_db
+            server_log(
+                action="🗄️ อัปเดตฐานข้อมูลคีย์ (SAVE DB)", 
+                status="✅ สำเร็จ (200)", 
+                detail=f"จำนวนคีย์ทั้งหมด: {len(db_storage)} ชุด | IP: {client_ip}"
+            )
+            return jsonify({"status": "success", "message": "Database saved successfully"}), 200
+        else:
+            server_log(
+                action="🗄️ อัปเดตฐานข้อมูลคีย์ (SAVE DB)", 
+                status="❌ ผิดพลาด (400)", 
+                detail=f"รูปแบบข้อมูลไม่ถูกต้อง | IP: {client_ip}"
+            )
+            return jsonify({"status": "error", "message": "Invalid format"}), 400
+            
+    else:
+        # ส่งข้อมูลฐานข้อมูลคีย์ทั้งหมดกลับไปแสดงผลที่ Admin Panel
+        server_log(
+            action="🗄️ ดึงข้อมูลฐานข้อมูล (GET DB)", 
+            status="✅ สำเร็จ (200)", 
+            detail=f"ส่งข้อมูลคีย์ {len(db_storage)} ชุด | IP: {client_ip}"
+        )
+        return jsonify(db_storage), 200
 
 # ---------------- เริ่มต้นรันเซิร์ฟเวอร์ ----------------
 if __name__ == '__main__':
-    # ดึงพอร์ตจาก Environment ของ Render หรือใช้พอร์ต 10000 เป็นค่าเริ่มต้น
     port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port)
-    app.run(host="0.0.0.0", port=5000)
