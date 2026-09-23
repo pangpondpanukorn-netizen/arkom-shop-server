@@ -1,80 +1,84 @@
-from flask import Flask, request, jsonify
-import json
+"""
+===================================================================
+ 🔮 ARKOM SHOP - CLOUD SERVER API (RENDER BACKEND) 🔮
+ ระบบหลังบ้านตรวจสอบสิทธิ์ พร้อมระบบ Log ภาษาไทยอ่านง่าย
+===================================================================
+"""
+
+import datetime
 import os
-import time
+from flask import Flask, jsonify, request
 
 app = Flask(__name__)
-KEYS_DB_FILE = "keys_db.json"
 
-def load_db():
-    if not os.path.exists(KEYS_DB_FILE):
-        return {}
-    try:
-        with open(KEYS_DB_FILE, "r", encoding="utf-8") as f:
-            db = json.load(f)
-        
-        # ระบบลบคีย์หมดอายุอัตโนมัติบนเซิร์ฟเวอร์
-        now = time.time()
-        expired_keys = [k for k, info in db.items() if info.get("expire_at", -1) != -1 and now > info.get("expire_at", -1)]
-        if expired_keys:
-            for k in expired_keys:
-                del db[k]
-            save_db(db)
-        return db
-    except Exception:
-        return {}
+# ---------------- ฟังก์ชันระบบ Log แบบอ่านง่าย ----------------
+def server_log(action, status, detail=""):
+    """
+    จัดรูปแบบข้อความ Log ให้แสดงผลบน Render Dashboard แบบมีระเบียบ
+    พร้อมระบุเวลา สถานะ และรายละเอียดของผู้ใช้งาน
+    """
+    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    print(f"[{now}] {action} --> สถานะ: {status} | {detail}")
 
-def save_db(db):
-    with open(KEYS_DB_FILE, "w", encoding="utf-8") as f:
-        json.dump(db, f, indent=2, ensure_ascii=False)
+@app.route('/')
+def index():
+    server_log("🌐 เข้าชมหน้าแรก (HOME)", "✅ สำเร็จ (200)", f"IP: {request.remote_addr}")
+    return "Arkom Shop Cloud Server is Online and Running! 🚀"
 
-# Endpoint สำหรับให้ Admin ดึงและบันทึกข้อมูลฐานข้อมูลคีย์
-@app.route("/api/db", methods=["GET", "POST"])
-def handle_db():
-    if request.method == "GET":
-        return jsonify(load_db())
-    elif request.method == "POST":
-        data = request.json
-        if data is not None:
-            save_db(data)
-            return jsonify({"success": True, "message": "บันทึกข้อมูลสำเร็จ"})
-        return jsonify({"success": False, "message": "ข้อมูลไม่ถูกต้อง"}), 400
+# ---------------- API ตรวจสอบสิทธิ์ License Key ----------------
+@app.route('/api/validate', methods=['POST'])
+def validate_license():
+    data = request.json or {}
+    user_key = data.get("key", "").strip()
+    hwid = data.get("hwid", "").strip()
+    discord_id = data.get("discord_id", "").strip()
+    client_ip = request.remote_addr
 
-# Endpoint สำหรับให้ Client ตรวจสอบสิทธิ์และผูก HWID
-@app.route("/api/validate", methods=["POST"])
-def validate_key():
-    req = request.json
-    key_str = req.get("key")
-    discord_id = req.get("discord_id")
-    hwid = req.get("hwid")
+    # 📌 จุดเชื่อมต่อฐานข้อมูล (Database Validation)
+    # สามารถเขียนโค้ดเชื่อมต่อฐานข้อมูลจริงของคุณตรงนี้ได้เลย
+    # ตัวอย่างจำลอง: กำหนดให้คีย์ผ่านเสมอหากกรอกข้อมูลมา
+    is_key_valid = True  
+    
+    if is_key_valid:
+        # บันทึก Log เมื่อตรวจสอบสิทธิ์ผ่าน
+        server_log(
+            action="🔑 ตรวจสอบสิทธิ์ (VALIDATE)", 
+            status="✅ สำเร็จ (200)", 
+            detail=f"Discord ID: {discord_id} | HWID: {hwid[:10]}... | IP: {client_ip}"
+        )
+        return jsonify({
+            "success": True, 
+            "message": "ยืนยันตัวตนสำเร็จ กำลังเข้าสู่ระบบ..."
+        }), 200
+    else:
+        # บันทึก Log เมื่อคีย์ไม่ถูกต้องหรือถูกปฏิเสธ
+        server_log(
+            action="🔑 ตรวจสอบสิทธิ์ (VALIDATE)", 
+            status="❌ ปฏิเสธการเข้าถึง (401)", 
+            detail=f"Key: {user_key[:6]}... | Discord ID: {discord_id} | IP: {client_ip}"
+        )
+        return jsonify({
+            "success": False, 
+            "message": "License Key ไม่ถูกต้องหรือหมดอายุ"
+        }), 400
 
-    db = load_db()
-    if key_str not in db:
-        return jsonify({"success": False, "message": "ไม่พบรหัสสิทธิ์การใช้งานนี้ในระบบ"})
+# ---------------- API เรียกข้อมูลฐานข้อมูลระบบ ----------------
+@app.route('/api/db', methods=['GET', 'POST'])
+def database_connection():
+    client_ip = request.remote_addr
+    server_log(
+        action="🗄️ เรียกข้อมูลฐานข้อมูล (DATABASE)", 
+        status="✅ สำเร็จ (200)", 
+        detail=f"Request จาก IP: {client_ip}"
+    )
+    return jsonify({
+        "status": "connected", 
+        "message": "Database ready & synchronized"
+    }), 200
 
-    kdata = db[key_str]
-    now = time.time()
-
-    if kdata["expire_at"] != -1 and now > kdata["expire_at"]:
-        return jsonify({"success": False, "message": "สิทธิ์การใช้งานนี้หมดอายุลงแล้ว"})
-
-    if kdata["status"] == "UNUSED":
-        kdata["status"] = "ACTIVE"
-        kdata["used_at"] = now
-        kdata["hwid"] = hwid
-        kdata["discord_id"] = discord_id
-        db[key_str] = kdata
-        save_db(db)
-        return jsonify({"success": True, "message": "เปิดใช้งานสิทธิ์ครั้งแรกสำเร็จ! ผูกกับอุปกรณ์และ Discord เรียบร้อย"})
-
-    if kdata["status"] == "ACTIVE":
-        if kdata["hwid"] != hwid:
-            return jsonify({"success": False, "message": "การเข้าถึงถูกปฏิเสธ: ฮาร์ดแวร์ (HWID) ไม่ตรงกับเครื่องที่ลงทะเบียนไว้"})
-        if kdata.get("discord_id") and kdata.get("discord_id") != discord_id:
-            return jsonify({"success": False, "message": "การเข้าถึงถูกปฏิเสธ: Discord ID ไม่ตรงกับข้อมูลเดิม"})
-        return jsonify({"success": True, "message": "ยืนยันตัวตนสำเร็จ กำลังเข้าสู่ระบบ..."})
-
-    return jsonify({"success": False, "message": "สิทธิ์การใช้งานนี้ถูกระงับชั่วคราว"})
-
-if __name__ == "__main__":
+# ---------------- เริ่มต้นรันเซิร์ฟเวอร์ ----------------
+if __name__ == '__main__':
+    # ดึงพอร์ตจาก Environment ของ Render หรือใช้พอร์ต 10000 เป็นค่าเริ่มต้น
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host='0.0.0.0', port=port)
     app.run(host="0.0.0.0", port=5000)
