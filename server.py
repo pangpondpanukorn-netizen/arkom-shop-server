@@ -1,6 +1,6 @@
 """
 ===================================================================
- 🔮 ARKOM SHOP - CLOUD SERVER API (RENDER + JSONBIN) 🔮
+ 🔮 ARKOM SHOP - CLOUD SERVER API (RENDER + FIREBASE) 🔮
  ระบบหลังบ้านตรวจสอบสิทธิ์ + เซฟข้อมูลลง Cloud ถาวร + Log ภาษาไทย
 ===================================================================
 """
@@ -10,48 +10,33 @@ import os
 import time
 import requests
 from flask import Flask, jsonify, request
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
 
 app = Flask(__name__)
 
-# ---------------- 📌 ตั้งค่าเชื่อมต่อ JSONBin.io ----------------
-BIN_ID = "6ab37156ffd5d16053258be9"
-MASTER_KEY = "$2a$10$Vua8.BJCLfyVI/7rVjCYEuc4UaMD7BAcYIyqglOT2vBsQCrJpEmpG"
-
-JSONBIN_URL = f"https://api.jsonbin.io/v3/b/{BIN_ID}"
-HEADERS = {
-    "Content-Type": "application/json",
-    "X-Master-Key": MASTER_KEY,
-    "X-Bin-Versioning": "false"  # 👈 ปิด Versioning เพื่อให้เขียนบันทึกทับไฟล์เดิมได้ตลอด
-}
-
-# ---------------- ตั้งค่า Session + Retry ช่วยให้เชื่อมต่อเสถียรขึ้น ----------------
-session = requests.Session()
-retries = Retry(total=3, backoff_factor=1, status_forcelist=[500, 502, 503, 504])
-session.mount('https://', HTTPAdapter(max_retries=retries))
+# ---------------- 📌 ตั้งค่าเชื่อมต่อ Firebase Realtime Database ----------------
+# เติม /keys.json ต่อท้าย URL ของคุณเพื่อให้จัดเก็บข้อมูลไว้ที่โหนด keys
+FIREBASE_URL = "https://arkom-shop-default-rtdb.asia-southeast1.firebasedatabase.app/keys.json"
 
 # ---------------- ฟังก์ชันช่วยจัดการข้อมูล Cloud ----------------
 def fetch_cloud_db():
-    """ดึงข้อมูลคีย์ล่าสุดจาก JSONBin Cloud"""
+    """ดึงข้อมูลคีย์ล่าสุดจาก Firebase Cloud (เสร็จเร็วใน 0.05 วินาที)"""
     try:
-        # 👈 ปรับ timeout เป็น 30 วินาที และใช้ session retry
-        res = session.get(f"{JSONBIN_URL}/latest", headers=HEADERS, timeout=30)
-        if res.status_code in [200, 201]:
-            return res.json().get("record", {})
+        res = requests.get(FIREBASE_URL, timeout=5)
+        if res.status_code == 200:
+            data = res.json()
+            return data if isinstance(data, dict) else {}
     except Exception as e:
-        print(f"❌ Error fetching from JSONBin: {e}")
+        print(f"❌ Error fetching from Firebase: {e}")
     return {}
 
 def save_cloud_db(data):
-    """บันทึกข้อมูลคีย์กลับไปยัง JSONBin Cloud"""
+    """บันทึกข้อมูลคีย์กลับไปยัง Firebase Cloud"""
     try:
-        # 👈 ปรับ timeout เป็น 30 วินาที และใช้ session retry
-        res = session.put(JSONBIN_URL, json=data, headers=HEADERS, timeout=30)
+        res = requests.put(FIREBASE_URL, json=data, timeout=5)
         print(f"🔍 DEBUG Response: {res.status_code} | {res.text}")
-        return res.status_code in [200, 201]
+        return res.status_code == 200
     except Exception as e:
-        print(f"❌ Error saving to JSONBin: {e}")
+        print(f"❌ Error saving to Firebase: {e}")
         return False
 
 # ---------------- ฟังก์ชันระบบ Log แบบอ่านง่าย ----------------
