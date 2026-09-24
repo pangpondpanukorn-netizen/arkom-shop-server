@@ -10,6 +10,8 @@ import os
 import time
 import requests
 from flask import Flask, jsonify, request
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 app = Flask(__name__)
 
@@ -24,11 +26,17 @@ HEADERS = {
     "X-Bin-Versioning": "false"  # 👈 ปิด Versioning เพื่อให้เขียนบันทึกทับไฟล์เดิมได้ตลอด
 }
 
+# ---------------- ตั้งค่า Session + Retry ช่วยให้เชื่อมต่อเสถียรขึ้น ----------------
+session = requests.Session()
+retries = Retry(total=3, backoff_factor=1, status_forcelist=[500, 502, 503, 504])
+session.mount('https://', HTTPAdapter(max_retries=retries))
+
 # ---------------- ฟังก์ชันช่วยจัดการข้อมูล Cloud ----------------
 def fetch_cloud_db():
     """ดึงข้อมูลคีย์ล่าสุดจาก JSONBin Cloud"""
     try:
-        res = requests.get(f"{JSONBIN_URL}/latest", headers=HEADERS, timeout=10)
+        # 👈 ปรับ timeout เป็น 30 วินาที และใช้ session retry
+        res = session.get(f"{JSONBIN_URL}/latest", headers=HEADERS, timeout=30)
         if res.status_code in [200, 201]:
             return res.json().get("record", {})
     except Exception as e:
@@ -38,7 +46,8 @@ def fetch_cloud_db():
 def save_cloud_db(data):
     """บันทึกข้อมูลคีย์กลับไปยัง JSONBin Cloud"""
     try:
-        res = requests.put(JSONBIN_URL, json=data, headers=HEADERS, timeout=10)
+        # 👈 ปรับ timeout เป็น 30 วินาที และใช้ session retry
+        res = session.put(JSONBIN_URL, json=data, headers=HEADERS, timeout=30)
         print(f"🔍 DEBUG Response: {res.status_code} | {res.text}")
         return res.status_code in [200, 201]
     except Exception as e:
