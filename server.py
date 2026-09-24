@@ -14,7 +14,7 @@ from flask import Flask, jsonify, request
 app = Flask(__name__)
 
 # ---------------- 📌 ตั้งค่าเชื่อมต่อ JSONBin.io ----------------
-BIN_ID = "6ab37156ffd5d16053258be9"[cite: 5]
+BIN_ID = "6ab37156ffd5d16053258be9"
 MASTER_KEY = "$2a$10$Vua8.BJCLfyVI/7rVjCYEuc4UaMD7BAcYIyqglOT2vBsQCrJpEmpG"
 
 JSONBIN_URL = f"https://api.jsonbin.io/v3/b/{BIN_ID}"
