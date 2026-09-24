@@ -20,7 +20,8 @@ MASTER_KEY = "$2a$10$Vua8.BJCLfyVI/7rVjCYEuc4UaMD7BAcYIyqglOT2vBsQCrJpEmpG"
 JSONBIN_URL = f"https://api.jsonbin.io/v3/b/{BIN_ID}"
 HEADERS = {
     "Content-Type": "application/json",
-    "X-Master-Key": MASTER_KEY
+    "X-Master-Key": MASTER_KEY,
+    "X-Bin-Versioning": "false"  # 👈 ปิด Versioning เพื่อให้เขียนบันทึกทับไฟล์เดิมได้ตลอด
 }
 
 # ---------------- ฟังก์ชันช่วยจัดการข้อมูล Cloud ----------------
@@ -28,7 +29,7 @@ def fetch_cloud_db():
     """ดึงข้อมูลคีย์ล่าสุดจาก JSONBin Cloud"""
     try:
         res = requests.get(f"{JSONBIN_URL}/latest", headers=HEADERS, timeout=10)
-        if res.status_code == 200:
+        if res.status_code in [200, 201]:
             return res.json().get("record", {})
     except Exception as e:
         print(f"❌ Error fetching from JSONBin: {e}")
@@ -38,7 +39,8 @@ def save_cloud_db(data):
     """บันทึกข้อมูลคีย์กลับไปยัง JSONBin Cloud"""
     try:
         res = requests.put(JSONBIN_URL, json=data, headers=HEADERS, timeout=10)
-        return res.status_code == 200
+        print(f"🔍 DEBUG Response: {res.status_code} | {res.text}")
+        return res.status_code in [200, 201]
     except Exception as e:
         print(f"❌ Error saving to JSONBin: {e}")
         return False
